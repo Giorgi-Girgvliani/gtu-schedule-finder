@@ -7,15 +7,20 @@ TBILISI = timezone(timedelta(hours=4))
 
 # GTU publishes next week's timetable on Saturdays (per leqtori.gtu.ge notice)
 REFRESH_WEEKDAY = 5  # Saturday
+# Assume new files appear during Saturday daytime — refresh after this hour (Tbilisi)
+REFRESH_HOUR = 14  # 2:00 PM
 
 
 def last_publish_cutoff(now: datetime | None = None) -> datetime:
-    """Start of the most recent Saturday in Tbilisi time."""
+    """Most recent Saturday 14:00 Tbilisi — when we treat the new week as available."""
     now = now or datetime.now(TBILISI)
     days_since = (now.weekday() - REFRESH_WEEKDAY) % 7
     cutoff = (now - timedelta(days=days_since)).replace(
-        hour=0, minute=0, second=0, microsecond=0
+        hour=REFRESH_HOUR, minute=0, second=0, microsecond=0
     )
+    if now < cutoff and days_since == 0:
+        # Before Saturday 14:00 — previous week's cutoff was last Saturday
+        cutoff -= timedelta(days=7)
     return cutoff
 
 
