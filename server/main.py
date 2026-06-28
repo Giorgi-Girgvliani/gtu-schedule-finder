@@ -1,19 +1,28 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import STATIC_DIR
-from .search import load_schedule, search_by_lecturer, suggest_teachers
+from .search import get_status, load_schedule, search_by_lecturer, start_background_load, suggest_teachers
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_background_load()
+    yield
+
 
 app = FastAPI(
     title="GTU Schedule Finder",
     description="Search GTU timetables by lecturer name — data fetched live from leqtori.gtu.ge",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -31,28 +40,15 @@ def health():
 
 @app.get("/api/status")
 def status():
-    index = load_schedule()
-    weekly = sum(1 for e in index.entries if e.schedule_type == "weekly")
-    exams = sum(1 for e in index.entries if e.schedule_type == "exam")
-    return {
-        "teachers": len(index.teachers),
-        "entries": len(index.entries),
-        "weekly_entries": weekly,
-        "exam_entries": exams,
-        "sources": index.sources,
-        "errors": index.errors,
-        "loaded_at": index.loaded_at,
-    }
+    return get_status()
 
 
 @app.post("/api/refresh")
 def refresh():
-    index = load_schedule(force=True)
-    return {
-        "entries": len(index.entries),
-        "teachers": len(index.teachers),
-        "errors": index.errors,
-    }
+    if get_status().get("loading"):
+        return {"message": "Refresh already in progress.", "loading": True}
+    start_background_load(force=True)
+    return {"message": "Refresh started. Data will update in about a minute.", "loading": True}
 
 
 @app.get("/api/search")
@@ -61,6 +57,12 @@ def search(
     exams: bool = Query(True, description="Include final exam schedule"),
     weekly: bool = Query(True, description="Include weekly timetable"),
 ):
+    state = get_status()
+    if not state.get("ready"):
+        raise HTTPException(
+            status_code=503,
+            detail=state.get("message", "Schedule data is still loading. Please wait."),
+        )
     results = search_by_lecturer(q, include_exams=exams, include_weekly=weekly)
     return {
         "query": q,
@@ -71,6 +73,8 @@ def search(
 
 @app.get("/api/teachers")
 def teachers(q: str = Query("", description="Optional filter")):
+    if not get_status().get("ready"):
+        return {"teachers": []}
     return {"teachers": suggest_teachers(q, limit=25)}
 
 

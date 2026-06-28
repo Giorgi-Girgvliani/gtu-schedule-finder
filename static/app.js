@@ -4,8 +4,11 @@ const suggestionsEl = document.getElementById("suggestions");
 const resultsEl = document.getElementById("results");
 const statusEl = document.getElementById("status");
 const refreshBtn = document.getElementById("refresh-btn");
+const searchBtn = document.getElementById("search-btn");
 
 let suggestTimer = null;
+let statusPollTimer = null;
+let dataReady = false;
 
 function showStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -15,6 +18,11 @@ function showStatus(message, isError = false) {
 
 function hideStatus() {
   statusEl.classList.add("hidden");
+}
+
+function setSearchEnabled(enabled) {
+  searchBtn.disabled = !enabled;
+  queryInput.disabled = !enabled;
 }
 
 function renderResults(data) {
@@ -66,6 +74,12 @@ async function runSearch() {
   const q = queryInput.value.trim();
   if (!q) return;
 
+  if (!dataReady) {
+    showStatus("Still loading GTU data — please wait a moment and try again.");
+    pollStatus();
+    return;
+  }
+
   const weekly = document.getElementById("weekly").checked;
   const exams = document.getElementById("exams").checked;
 
@@ -75,9 +89,10 @@ async function runSearch() {
   try {
     const params = new URLSearchParams({ q, weekly, exams });
     const response = await fetch(`/api/search?${params}`);
-    if (!response.ok) throw new Error("Search failed");
     const data = await response.json();
-    hideStatus();
+    if (!response.ok) {
+      throw new Error(data.detail || "Search failed");
+    }
     showStatus(`Found ${data.count} result${data.count === 1 ? "" : "s"} for "${data.query}"`);
     renderResults(data);
   } catch (error) {
@@ -86,7 +101,7 @@ async function runSearch() {
 }
 
 async function loadSuggestions(value) {
-  if (!value.trim()) {
+  if (!value.trim() || !dataReady) {
     suggestionsEl.classList.add("hidden");
     return;
   }
@@ -108,6 +123,42 @@ async function loadSuggestions(value) {
   suggestionsEl.classList.remove("hidden");
 }
 
+async function pollStatus() {
+  try {
+    const response = await fetch("/api/status");
+    if (!response.ok) throw new Error("Status request failed");
+    const data = await response.json();
+
+    if (data.loading) {
+      dataReady = false;
+      setSearchEnabled(false);
+      showStatus(data.message || "Loading GTU timetable data…");
+      statusPollTimer = setTimeout(pollStatus, 3000);
+      return;
+    }
+
+    if (data.ready) {
+      dataReady = true;
+      setSearchEnabled(true);
+      let message = `Ready — ${data.teachers} lecturers, ${data.weekly_entries} weekly classes, ${data.exam_entries} exam slots indexed.`;
+      if (data.errors?.length) {
+        message += ` (${data.errors.length} source warning${data.errors.length === 1 ? "" : "s"})`;
+      }
+      showStatus(message);
+      return;
+    }
+
+    dataReady = false;
+    setSearchEnabled(false);
+    showStatus(data.message || "Waiting for schedule data…", true);
+    statusPollTimer = setTimeout(pollStatus, 3000);
+  } catch {
+    dataReady = false;
+    setSearchEnabled(false);
+    showStatus("Could not reach the server. If this is Render free tier, wait ~30s for the site to wake up, then refresh the page.", true);
+  }
+}
+
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   runSearch();
@@ -127,29 +178,18 @@ suggestionsEl.addEventListener("click", (event) => {
 });
 
 refreshBtn.addEventListener("click", async () => {
-  showStatus("Refreshing timetable data from GTU…");
+  showStatus("Starting refresh from GTU…");
+  dataReady = false;
+  setSearchEnabled(false);
   try {
     const response = await fetch("/api/refresh", { method: "POST" });
     const data = await response.json();
-    showStatus(`Loaded ${data.entries} entries from ${data.teachers} teachers.`);
-    if (data.errors?.length) {
-      showStatus(`Loaded with warnings: ${data.errors.join(" | ")}`, true);
-    }
-  } catch (error) {
+    showStatus(data.message || "Refresh started.");
+    pollStatus();
+  } catch {
     showStatus("Refresh failed.", true);
   }
 });
 
-async function loadInitialStatus() {
-  try {
-    const response = await fetch("/api/status");
-    const data = await response.json();
-    showStatus(
-      `Ready — ${data.teachers} lecturers, ${data.weekly_entries} weekly classes, ${data.exam_entries} exam slots indexed.`
-    );
-  } catch {
-    showStatus("Could not reach the API. Start the server first.", true);
-  }
-}
-
-loadInitialStatus();
+setSearchEnabled(false);
+pollStatus();

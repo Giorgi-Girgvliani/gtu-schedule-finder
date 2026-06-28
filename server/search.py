@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -21,13 +22,74 @@ class ScheduleIndex:
 
 
 _index: ScheduleIndex | None = None
+_loading = False
+_load_lock = threading.Lock()
+
+
+def get_status() -> dict:
+    if _loading:
+        return {
+            "ready": False,
+            "loading": True,
+            "message": "Downloading and parsing GTU timetables…",
+        }
+    if not _index or not _index.entries:
+        return {
+            "ready": False,
+            "loading": False,
+            "message": "Schedule data not loaded yet.",
+        }
+
+    weekly = sum(1 for e in _index.entries if e.schedule_type == "weekly")
+    exams = sum(1 for e in _index.entries if e.schedule_type == "exam")
+    return {
+        "ready": True,
+        "loading": False,
+        "teachers": len(_index.teachers),
+        "entries": len(_index.entries),
+        "weekly_entries": weekly,
+        "exam_entries": exams,
+        "sources": _index.sources,
+        "errors": _index.errors,
+        "loaded_at": _index.loaded_at,
+    }
+
+
+def start_background_load(*, force: bool = False) -> None:
+    if _loading:
+        return
+
+    def runner() -> None:
+        try:
+            load_schedule(force=force)
+        except Exception as exc:
+            global _index
+            _index = ScheduleIndex(errors=[f"Load failed: {exc}"], loaded_at=time.time())
+
+    thread = threading.Thread(target=runner, daemon=True)
+    thread.start()
 
 
 def load_schedule(*, force: bool = False) -> ScheduleIndex:
-    global _index
+    global _index, _loading
+
     if _index and not force and (time.time() - _index.loaded_at) < 3600:
         return _index
 
+    with _load_lock:
+        if _index and not force and (time.time() - _index.loaded_at) < 3600:
+            return _index
+
+        _loading = True
+        try:
+            index = _build_index(force=force)
+            _index = index
+            return index
+        finally:
+            _loading = False
+
+
+def _build_index(*, force: bool = False) -> ScheduleIndex:
     index = ScheduleIndex(loaded_at=time.time())
 
     teacher_urls, exam_pdfs = discover_sources()
@@ -81,7 +143,6 @@ def load_schedule(*, force: bool = False) -> ScheduleIndex:
 
     index.teachers = sorted(unique_teachers, key=normalize_name)
 
-    _index = index
     return index
 
 
