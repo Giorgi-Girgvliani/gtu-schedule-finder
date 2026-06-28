@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# App cache & local downloads
+data/cache/
+data/pdfs/
+
+# Dev artifacts
+test_out.txt
+discovered.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
