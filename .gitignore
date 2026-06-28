@@ -13,7 +13,10 @@ data/schedule-index.json
 
 # Dev artifacts
 test_out.txt
+test_boot.txt
+timing.txt
 discovered.json
+data/leqtori-home.html
 
 # OS / editor
 .DS_Store

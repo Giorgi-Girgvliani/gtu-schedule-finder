@@ -1,1 +1,0 @@
-﻿{'ready': False, 'loading': True, 'updating': False, 'message': 'First-time setup ù downloading and parsing GTU timetables (~30 seconds)à'}
