@@ -6,7 +6,8 @@ from urllib.parse import unquote, urljoin
 
 from bs4 import BeautifulSoup
 
-from .config import BASE_DIR, GTU_PUBLIC_BASE
+from .config import BASE_DIR, GTU_PUBLIC_BASE, LEQTORI_PAGE_URL
+from .fetcher import fetch_url
 
 TAB_CONTENT_CANDIDATES = [
     BASE_DIR / "data" / "leqtori-tab-content.txt",
@@ -27,7 +28,16 @@ def _label_from_link(text: str, href: str) -> str:
     return text or unquote(href).split("/")[-1]
 
 
+def _fetch_live_page_html() -> str | None:
+    try:
+        return fetch_url(LEQTORI_PAGE_URL).decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+
 def discover_sources(tab_html: str | None = None) -> tuple[list[str], list[tuple[str, str]]]:
+    if tab_html is None:
+        tab_html = _fetch_live_page_html()
     if tab_html is None:
         for candidate in TAB_CONTENT_CANDIDATES:
             if candidate.exists():

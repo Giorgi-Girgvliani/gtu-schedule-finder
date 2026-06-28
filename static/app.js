@@ -141,6 +141,10 @@ async function pollStatus() {
       dataReady = true;
       setSearchEnabled(true);
       let message = `Ready — ${data.teachers} lecturers, ${data.weekly_entries} weekly classes, ${data.exam_entries} exam slots indexed.`;
+      if (data.last_updated) {
+        message += ` Last updated: ${data.last_updated}.`;
+      }
+      message += " Auto-refreshes after each Saturday when GTU publishes.";
       if (data.errors?.length) {
         message += ` (${data.errors.length} source warning${data.errors.length === 1 ? "" : "s"})`;
       }

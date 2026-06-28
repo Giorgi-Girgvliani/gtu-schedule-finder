@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -49,6 +50,16 @@ def refresh():
         return {"message": "Refresh already in progress.", "loading": True}
     start_background_load(force=True)
     return {"message": "Refresh started. Data will update in about a minute.", "loading": True}
+
+
+@app.post("/api/cron/refresh")
+def cron_refresh(authorization: str | None = Header(default=None)):
+    """Optional scheduled refresh — set CRON_SECRET on Render and call weekly via cron-job.org."""
+    secret = os.environ.get("CRON_SECRET", "")
+    if not secret or authorization != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    start_background_load(force=True)
+    return {"ok": True, "message": "Scheduled refresh started"}
 
 
 @app.get("/api/search")

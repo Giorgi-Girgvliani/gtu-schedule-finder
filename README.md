@@ -32,6 +32,25 @@ Open **http://127.0.0.1:8000** in your browser.
 
 Query params for search: `weekly=true`, `exams=true`.
 
+## Weekly timetable updates
+
+GTU publishes the next week's schedule on **Saturdays** (see leqtori.gtu.ge). This app:
+
+- **Fetches live links** from [leqtori.gtu.ge](http://leqtori.gtu.ge/) on each reload (no manual URL edits most weeks)
+- **Auto-refreshes** when data is older than the most recent Saturday (Tbilisi time)
+- Shows **last updated** in the status bar
+
+### Optional: scheduled refresh on Render
+
+1. In Render → **Environment**, add `CRON_SECRET` = any long random string
+2. On [cron-job.org](https://cron-job.org) (free), create a weekly job:
+   - **URL:** `https://YOUR-APP.onrender.com/api/cron/refresh`
+   - **Method:** POST
+   - **Header:** `Authorization: Bearer YOUR_CRON_SECRET`
+   - **Schedule:** Saturday 10:00 (Asia/Tbilisi)
+
+This wakes the site and reloads timetables even if nobody visits.
+
 ## Updating URLs each semester
 
 GTU changes file names on `leqtori.gtu.ge` every semester. Edit `server/config.py`:

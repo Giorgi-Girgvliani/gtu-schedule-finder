@@ -7,6 +7,7 @@ CACHE_DIR = DATA_DIR / "cache"
 LOCAL_PDF_DIR = DATA_DIR / "pdfs"
 
 GTU_PUBLIC_BASE = "http://leqtori.gtu.ge:9000/public/"
+LEQTORI_PAGE_URL = "http://leqtori.gtu.ge/"
 
 FALLBACK_TEACHERS_URLS = [
     f"{GTU_PUBLIC_BASE}teachers_2025_2026_2_15.html",
@@ -15,6 +16,7 @@ FALLBACK_TEACHERS_URLS = [
 
 FALLBACK_EXAM_PDF_URLS: list[tuple[str, str]] = []
 
+# Minimum time between reloads within the same week (hourly cache)
 CACHE_TTL_SECONDS = 3600
 
 DAY_MAP = {

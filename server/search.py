@@ -4,11 +4,12 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from .config import FALLBACK_EXAM_PDF_URLS, FALLBACK_TEACHERS_URLS, LOCAL_PDF_DIR
+from .config import CACHE_TTL_SECONDS, FALLBACK_EXAM_PDF_URLS, FALLBACK_TEACHERS_URLS, LOCAL_PDF_DIR
 from .discover import discover_sources
 from .fetcher import fetch_url
 from .html_parser import ScheduleEntry, list_teachers, parse_teachers_html
 from .pdf_parser import parse_exam_pdf
+from .schedule_refresh import format_loaded_at, should_refresh_weekly
 from .translator import name_matches, normalize_name, translate_course_line
 
 
@@ -40,6 +41,15 @@ def get_status() -> dict:
             "message": "Schedule data not loaded yet.",
         }
 
+    if should_refresh_weekly(_index.loaded_at):
+        start_background_load(force=True)
+        return {
+            "ready": False,
+            "loading": True,
+            "message": "New weekly timetable expected — refreshing from GTU…",
+            "last_updated": format_loaded_at(_index.loaded_at),
+        }
+
     weekly = sum(1 for e in _index.entries if e.schedule_type == "weekly")
     exams = sum(1 for e in _index.entries if e.schedule_type == "exam")
     return {
@@ -52,6 +62,8 @@ def get_status() -> dict:
         "sources": _index.sources,
         "errors": _index.errors,
         "loaded_at": _index.loaded_at,
+        "last_updated": format_loaded_at(_index.loaded_at),
+        "weekly_refresh_due": False,
     }
 
 
@@ -73,11 +85,11 @@ def start_background_load(*, force: bool = False) -> None:
 def load_schedule(*, force: bool = False) -> ScheduleIndex:
     global _index, _loading
 
-    if _index and not force and (time.time() - _index.loaded_at) < 3600:
+    if _index and not force and _cache_is_fresh():
         return _index
 
     with _load_lock:
-        if _index and not force and (time.time() - _index.loaded_at) < 3600:
+        if _index and not force and _cache_is_fresh():
             return _index
 
         _loading = True
@@ -87,6 +99,14 @@ def load_schedule(*, force: bool = False) -> ScheduleIndex:
             return index
         finally:
             _loading = False
+
+
+def _cache_is_fresh() -> bool:
+    if not _index or not _index.loaded_at:
+        return False
+    if should_refresh_weekly(_index.loaded_at):
+        return False
+    return (time.time() - _index.loaded_at) < CACHE_TTL_SECONDS
 
 
 def _build_index(*, force: bool = False) -> ScheduleIndex:
