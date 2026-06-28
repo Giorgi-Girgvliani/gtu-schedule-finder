@@ -10,6 +10,11 @@ REFRESH_WEEKDAY = 5  # Saturday
 # Assume new files appear during Saturday daytime — refresh after this hour (Tbilisi)
 REFRESH_HOUR = 14  # 2:00 PM
 
+# How long (seconds) to wait after startup before triggering a background
+# Saturday refresh.  Gives the Render free-tier instance time to finish
+# booting and start serving the cached data before hitting GTU's servers.
+REFRESH_DELAY_SECONDS = 60
+
 
 def last_publish_cutoff(now: datetime | None = None) -> datetime:
     """Most recent Saturday 14:00 Tbilisi — when we treat the new week as available."""

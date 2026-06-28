@@ -9,7 +9,7 @@ env/
 # App cache & local downloads
 data/cache/
 data/pdfs/
-data/schedule-index.json
+# data/schedule-index.json is committed to git so Render deploys start with pre-built data
 
 # Dev artifacts
 test_out.txt
