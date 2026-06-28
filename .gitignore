@@ -9,6 +9,7 @@ env/
 # App cache & local downloads
 data/cache/
 data/pdfs/
+data/schedule-index.json
 
 # Dev artifacts
 test_out.txt

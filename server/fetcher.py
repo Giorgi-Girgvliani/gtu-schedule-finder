@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import re
-import time
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
 
-from .config import CACHE_DIR, CACHE_TTL_SECONDS, LOCAL_PDF_DIR
+from .config import CACHE_DIR
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -30,9 +28,7 @@ def _cache_path(url: str) -> Path:
 def fetch_url(url: str, *, force: bool = False) -> bytes:
     path = _cache_path(url)
     if not force and path.exists():
-        age = time.time() - path.stat().st_mtime
-        if age < CACHE_TTL_SECONDS:
-            return path.read_bytes()
+        return path.read_bytes()
 
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
         response = client.get(_encode_url(url))

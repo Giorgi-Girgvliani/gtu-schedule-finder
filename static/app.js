@@ -3,7 +3,6 @@ const queryInput = document.getElementById("query");
 const suggestionsEl = document.getElementById("suggestions");
 const resultsEl = document.getElementById("results");
 const statusEl = document.getElementById("status");
-const refreshBtn = document.getElementById("refresh-btn");
 const searchBtn = document.getElementById("search-btn");
 
 let suggestTimer = null;
@@ -12,12 +11,8 @@ let dataReady = false;
 
 function showStatus(message, isError = false) {
   statusEl.textContent = message;
-  statusEl.classList.remove("hidden", "error");
+  statusEl.classList.remove("hidden", "error", "updating");
   if (isError) statusEl.classList.add("error");
-}
-
-function hideStatus() {
-  statusEl.classList.add("hidden");
 }
 
 function setSearchEnabled(enabled) {
@@ -129,7 +124,7 @@ async function pollStatus() {
     if (!response.ok) throw new Error("Status request failed");
     const data = await response.json();
 
-    if (data.loading) {
+    if (data.loading && !data.ready) {
       dataReady = false;
       setSearchEnabled(false);
       showStatus(data.message || "Loading GTU timetable data…");
@@ -140,11 +135,18 @@ async function pollStatus() {
     if (data.ready) {
       dataReady = true;
       setSearchEnabled(true);
-      let message = `Ready — ${data.teachers} lecturers, ${data.weekly_entries} weekly classes, ${data.exam_entries} exam slots indexed.`;
-      if (data.last_updated) {
-        message += ` Last updated: ${data.last_updated}.`;
+
+      if (data.updating) {
+        statusEl.classList.add("updating");
+        showStatus(data.message || "Updating timetable from GTU…");
+        statusPollTimer = setTimeout(pollStatus, 3000);
+        return;
       }
-      message += " Auto-refreshes after each Saturday when GTU publishes.";
+
+      let message = `Ready — ${data.teachers} lecturers, ${data.weekly_entries} weekly classes, ${data.exam_entries} exam slots.`;
+      if (data.last_updated) {
+        message += ` Data from ${data.last_updated}. Updates automatically every Saturday.`;
+      }
       if (data.errors?.length) {
         message += ` (${data.errors.length} source warning${data.errors.length === 1 ? "" : "s"})`;
       }
@@ -159,7 +161,7 @@ async function pollStatus() {
   } catch {
     dataReady = false;
     setSearchEnabled(false);
-    showStatus("Could not reach the server. If this is Render free tier, wait ~30s for the site to wake up, then refresh the page.", true);
+    showStatus("Could not reach the server. On Render free tier, wait ~30s for the site to wake up, then reload the page.", true);
   }
 }
 
@@ -179,20 +181,6 @@ suggestionsEl.addEventListener("click", (event) => {
   queryInput.value = button.dataset.name;
   suggestionsEl.classList.add("hidden");
   runSearch();
-});
-
-refreshBtn.addEventListener("click", async () => {
-  showStatus("Starting refresh from GTU…");
-  dataReady = false;
-  setSearchEnabled(false);
-  try {
-    const response = await fetch("/api/refresh", { method: "POST" });
-    const data = await response.json();
-    showStatus(data.message || "Refresh started.");
-    pollStatus();
-  } catch {
-    showStatus("Refresh failed.", true);
-  }
 });
 
 setSearchEnabled(false);

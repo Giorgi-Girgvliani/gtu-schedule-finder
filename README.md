@@ -34,22 +34,23 @@ Query params for search: `weekly=true`, `exams=true`.
 
 ## Weekly timetable updates
 
-GTU publishes the next week's schedule on **Saturdays** (see leqtori.gtu.ge). This app:
+GTU publishes the next week's schedule on **Saturdays**. This app:
 
-- **Fetches live links** from [leqtori.gtu.ge](http://leqtori.gtu.ge/) on each reload (no manual URL edits most weeks)
-- **Auto-refreshes** when data is older than the most recent Saturday (Tbilisi time)
-- Shows **last updated** in the status bar
+- **Downloads once** and saves parsed data to `data/schedule-index.json`
+- **Auto-updates** after each Saturday (2 PM Tbilisi time) — no manual refresh button
+- Shows an **amber banner** while fetching new data; old data stays searchable until the update finishes
+- **Fetches live links** from [leqtori.gtu.ge](http://leqtori.gtu.ge/) on each weekly update
 
-### Optional: scheduled refresh on Render
+**Note:** Render's free tier uses ephemeral disk — saved data survives between visits but may reset on redeploy. Searches stay fast within the same week.
 
-1. In Render → **Environment**, add `CRON_SECRET` = any long random string
-2. On [cron-job.org](https://cron-job.org) (free), create a weekly job:
-   - **URL:** `https://YOUR-APP.onrender.com/api/cron/refresh`
-   - **Method:** POST
-   - **Header:** `Authorization: Bearer YOUR_CRON_SECRET`
-   - **Schedule:** Saturday 10:00 (Asia/Tbilisi)
+### Render and GitHub
 
-This wakes the site and reloads timetables even if nobody visits.
+Render **does not** update GitHub. The flow is one-way: you push code **to** GitHub → Render deploys **from** GitHub. Timetable data lives on the server disk, not in the repo.
+
+### Optional: Saturday cron (wake Render)
+
+1. Render → **Environment** → `CRON_SECRET` = random string
+2. [cron-job.org](https://cron-job.org) → weekly POST to `/api/cron/refresh` with `Authorization: Bearer YOUR_CRON_SECRET`
 
 ## Updating URLs each semester
 

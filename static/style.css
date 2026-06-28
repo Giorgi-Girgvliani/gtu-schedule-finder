@@ -171,6 +171,12 @@ button.ghost {
   color: #fecaca;
 }
 
+.status.updating {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+}
+
 .results {
   display: grid;
   gap: 1rem;

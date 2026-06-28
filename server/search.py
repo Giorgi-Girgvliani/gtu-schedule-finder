@@ -4,12 +4,13 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from .config import CACHE_TTL_SECONDS, FALLBACK_EXAM_PDF_URLS, FALLBACK_TEACHERS_URLS, LOCAL_PDF_DIR
+from .config import FALLBACK_EXAM_PDF_URLS, FALLBACK_TEACHERS_URLS, LOCAL_PDF_DIR
 from .discover import discover_sources
 from .fetcher import fetch_url
 from .html_parser import ScheduleEntry, list_teachers, parse_teachers_html
 from .pdf_parser import parse_exam_pdf
 from .schedule_refresh import format_loaded_at, should_refresh_weekly
+from .storage import load_index, save_index
 from .translator import name_matches, normalize_name, translate_course_line
 
 
@@ -27,86 +28,130 @@ _loading = False
 _load_lock = threading.Lock()
 
 
+def _index_from_storage() -> ScheduleIndex | None:
+    stored = load_index()
+    if not stored:
+        return None
+    entries, teachers, loaded_at, sources, errors = stored
+    if not entries:
+        return None
+    return ScheduleIndex(
+        entries=entries,
+        teachers=teachers,
+        loaded_at=loaded_at,
+        sources=sources,
+        errors=errors,
+    )
+
+
+def _status_payload(index: ScheduleIndex, *, ready: bool, loading: bool, message: str, updating: bool = False) -> dict:
+    weekly = sum(1 for e in index.entries if e.schedule_type == "weekly")
+    exams = sum(1 for e in index.entries if e.schedule_type == "exam")
+    return {
+        "ready": ready,
+        "loading": loading,
+        "updating": updating,
+        "message": message,
+        "teachers": len(index.teachers),
+        "entries": len(index.entries),
+        "weekly_entries": weekly,
+        "exam_entries": exams,
+        "sources": index.sources,
+        "errors": index.errors,
+        "loaded_at": index.loaded_at,
+        "last_updated": format_loaded_at(index.loaded_at),
+    }
+
+
 def get_status() -> dict:
+    global _index
+
     if _loading:
+        if _index and _index.entries:
+            return _status_payload(
+                _index,
+                ready=True,
+                loading=True,
+                updating=True,
+                message="New timetable is on the way — downloading from GTU now. You can still search the previous data.",
+            )
         return {
             "ready": False,
             "loading": True,
-            "message": "Downloading and parsing GTU timetables…",
+            "updating": False,
+            "message": "First-time setup — downloading and parsing GTU timetables (~30 seconds)…",
         }
+
     if not _index or not _index.entries:
         return {
             "ready": False,
             "loading": False,
+            "updating": False,
             "message": "Schedule data not loaded yet.",
         }
 
     if should_refresh_weekly(_index.loaded_at):
         start_background_load(force=True)
-        return {
-            "ready": False,
-            "loading": True,
-            "message": "New weekly timetable expected — refreshing from GTU…",
-            "last_updated": format_loaded_at(_index.loaded_at),
-        }
+        return _status_payload(
+            _index,
+            ready=True,
+            loading=True,
+            updating=True,
+            message="GTU updates timetables every Saturday — fetching the new week now. You can still search last week's data.",
+        )
 
-    weekly = sum(1 for e in _index.entries if e.schedule_type == "weekly")
-    exams = sum(1 for e in _index.entries if e.schedule_type == "exam")
-    return {
-        "ready": True,
-        "loading": False,
-        "teachers": len(_index.teachers),
-        "entries": len(_index.entries),
-        "weekly_entries": weekly,
-        "exam_entries": exams,
-        "sources": _index.sources,
-        "errors": _index.errors,
-        "loaded_at": _index.loaded_at,
-        "last_updated": format_loaded_at(_index.loaded_at),
-        "weekly_refresh_due": False,
-    }
+    return _status_payload(
+        _index,
+        ready=True,
+        loading=False,
+        message="Ready",
+    )
+
+
+def has_searchable_data() -> bool:
+    return bool(_index and _index.entries)
 
 
 def start_background_load(*, force: bool = False) -> None:
     if _loading:
         return
+    if not force and _index and not should_refresh_weekly(_index.loaded_at):
+        return
 
-    def runner() -> None:
-        try:
-            load_schedule(force=force)
-        except Exception as exc:
-            global _index
-            _index = ScheduleIndex(errors=[f"Load failed: {exc}"], loaded_at=time.time())
-
-    thread = threading.Thread(target=runner, daemon=True)
+    thread = threading.Thread(target=lambda: load_schedule(force=force), daemon=True)
     thread.start()
+
+
+def bootstrap() -> None:
+    """Load saved data on startup; refresh in background only if a Saturday has passed."""
+    global _index
+    stored = _index_from_storage()
+    if stored:
+        _index = stored
+        if should_refresh_weekly(stored.loaded_at):
+            start_background_load(force=True)
+    else:
+        start_background_load(force=True)
 
 
 def load_schedule(*, force: bool = False) -> ScheduleIndex:
     global _index, _loading
 
-    if _index and not force and _cache_is_fresh():
+    if not force and _index and not should_refresh_weekly(_index.loaded_at):
         return _index
 
     with _load_lock:
-        if _index and not force and _cache_is_fresh():
+        if not force and _index and not should_refresh_weekly(_index.loaded_at):
             return _index
 
         _loading = True
         try:
             index = _build_index(force=force)
             _index = index
+            save_index(index.entries, index.teachers, index.loaded_at, index.sources, index.errors)
             return index
         finally:
             _loading = False
-
-
-def _cache_is_fresh() -> bool:
-    if not _index or not _index.loaded_at:
-        return False
-    if should_refresh_weekly(_index.loaded_at):
-        return False
-    return (time.time() - _index.loaded_at) < CACHE_TTL_SECONDS
 
 
 def _build_index(*, force: bool = False) -> ScheduleIndex:
@@ -162,18 +207,18 @@ def _build_index(*, force: bool = False) -> ScheduleIndex:
             unique_teachers.append(entry.teacher_original)
 
     index.teachers = sorted(unique_teachers, key=normalize_name)
-
     return index
 
 
 def search_by_lecturer(query: str, *, include_exams: bool = True, include_weekly: bool = True) -> list[dict]:
-    index = load_schedule()
+    if not has_searchable_data():
+        load_schedule()
     query = query.strip()
-    if not query:
+    if not query or not _index:
         return []
 
     results: list[ScheduleEntry] = []
-    for entry in index.entries:
+    for entry in _index.entries:
         if entry.schedule_type == "exam" and not include_exams:
             continue
         if entry.schedule_type == "weekly" and not include_weekly:
@@ -203,10 +248,10 @@ def search_by_lecturer(query: str, *, include_exams: bool = True, include_weekly
 
 
 def suggest_teachers(query: str, limit: int = 10) -> list[str]:
-    index = load_schedule()
+    if not has_searchable_data():
+        return []
+    assert _index is not None
     query = normalize_name(query)
     if not query:
-        return index.teachers[:limit]
-
-    matches = [name for name in index.teachers if name_matches(name, query)]
-    return matches[:limit]
+        return _index.teachers[:limit]
+    return [name for name in _index.teachers if name_matches(name, query)][:limit]

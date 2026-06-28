@@ -16,8 +16,8 @@ FALLBACK_TEACHERS_URLS = [
 
 FALLBACK_EXAM_PDF_URLS: list[tuple[str, str]] = []
 
-# Minimum time between reloads within the same week (hourly cache)
-CACHE_TTL_SECONDS = 3600
+# Raw file cache on disk — only re-downloaded on weekly refresh (force=True)
+CACHE_TTL_SECONDS = 60 * 60 * 24 * 14
 
 DAY_MAP = {
     "mon": "Monday",
