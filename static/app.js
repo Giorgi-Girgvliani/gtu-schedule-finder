@@ -138,7 +138,10 @@ async function pollStatus() {
 
       if (data.updating) {
         statusEl.classList.add("updating");
-        showStatus(data.message || "Updating timetable from GTU…");
+        const msg = data.message ||
+          "Schedule files are being updated — this can take up to 5 minutes. " +
+          "Search is still available using last week's data.";
+        showStatus(msg);
         statusPollTimer = setTimeout(pollStatus, 3000);
         return;
       }

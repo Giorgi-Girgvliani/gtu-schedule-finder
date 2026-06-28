@@ -148,11 +148,49 @@ def parse_teachers_html(html: bytes, source_url: str) -> list[ScheduleEntry]:
     return entries
 
 
+def _clean_teacher_name(raw: str) -> str:
+    """Strip common noise prefixes/suffixes from navigation link text.
+
+    GTU's HTML sometimes includes group numbers, bullet prefixes, or
+    trailing punctuation before/after the actual teacher name.
+    Examples seen in the wild:
+      "112343 თ.აბუაშვილი,"  → "თ.აბუაშვილი"
+      "2)გიორგი მამათელაშვილი" → "გიორგი მამათელაშვილი"
+      "3, საინჟინრო"           → "საინჟინრო"  (filtered out later)
+    """
+    name = re.sub(r"^\d+[\s.,);:\-]*", "", raw).strip()
+    name = name.rstrip(".,;:")
+    return name.strip()
+
+
+def _is_valid_teacher_name(name: str) -> bool:
+    """Return True if *name* looks like an actual teacher name.
+
+    Filters out course titles, section headers, and other noise entries
+    that appear in the navigation list of some GTU timetable pages.
+    """
+    if not name:
+        return False
+    # Entries wrapped in parentheses are course/section notes, not names
+    if name.startswith("(") or name.startswith("["):
+        return False
+    # Too short to be a real name
+    if len(name) < 3:
+        return False
+    # Require at least 2 tokens OR an abbreviated initial (e.g. "თ.აბუაშვილი")
+    has_initial = "." in name and not name.startswith(".")
+    has_two_tokens = len(name.split()) >= 2
+    if not has_initial and not has_two_tokens:
+        return False
+    return True
+
+
 def list_teachers(html: bytes) -> list[str]:
     soup = BeautifulSoup(html, "lxml")
     names: list[str] = []
     for link in soup.select("ul li a[href^='#table_']"):
-        name = link.get_text(" ", strip=True)
-        if name:
+        raw = link.get_text(" ", strip=True)
+        name = _clean_teacher_name(raw)
+        if _is_valid_teacher_name(name):
             names.append(name)
     return names
