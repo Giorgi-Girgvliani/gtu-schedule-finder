@@ -8,6 +8,8 @@ const searchBtn = document.getElementById("search-btn");
 let suggestTimer = null;
 let statusPollTimer = null;
 let dataReady = false;
+let lastSearchData = null;
+let lastStatusData = null;
 
 function showStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -20,12 +22,27 @@ function setSearchEnabled(enabled) {
   queryInput.disabled = !enabled;
 }
 
+function courseDisplay(item) {
+  const original = item.course_original || "";
+  const translated = item.course || original;
+  const hasCyrillic = /[\u0400-\u04FF]/.test(original);
+  const hasGeorgian = /[\u10A0-\u10FF]/.test(original);
+
+  if (getLang() === "ka" && hasGeorgian) {
+    return { title: original, subtitle: translated !== original ? translated : "" };
+  }
+  if (getLang() === "ru" && hasCyrillic) {
+    return { title: original, subtitle: translated !== original ? translated : "" };
+  }
+  return { title: translated, subtitle: original !== translated ? original : "" };
+}
+
 function renderResults(data) {
   if (!data.results.length) {
     resultsEl.innerHTML = `
       <div class="empty-state">
-        <p>No schedule entries found for <strong>${escapeHtml(data.query)}</strong>.</p>
-        <p>Try the lecturer's surname in Georgian or English.</p>
+        <p>${t("emptyTitle", { query: escapeHtml(data.query) })}</p>
+        <p>${t("emptyHint")}</p>
       </div>`;
     return;
   }
@@ -33,24 +50,26 @@ function renderResults(data) {
   resultsEl.innerHTML = data.results
     .map((item) => {
       const isExam = item.schedule_type === "exam";
-      const whenLabel = isExam ? "Date" : "Day";
-      const whenValue = isExam ? item.day : item.day;
+      const whenLabel = isExam ? t("labelDate") : t("labelDay");
+      const whenValue = isExam ? (item.day || t("dash")) : translateDay(item.day);
+      const badge = isExam ? t("badgeExam") : t("badgeWeekly");
+      const { title, subtitle } = courseDisplay(item);
       return `
         <article class="card">
           <div class="card-header">
             <div>
-              <p class="course-title">${escapeHtml(item.course)}</p>
-              <p class="course-original">${escapeHtml(item.course_original)}</p>
+              <p class="course-title">${escapeHtml(title)}</p>
+              ${subtitle ? `<p class="course-original">${escapeHtml(subtitle)}</p>` : ""}
             </div>
-            <span class="badge ${isExam ? "exam" : "weekly"}">${isExam ? "Final exam" : "Weekly class"}</span>
+            <span class="badge ${isExam ? "exam" : "weekly"}">${badge}</span>
           </div>
           <div class="meta-grid">
-            <div class="meta-item"><span class="meta-label">Lecturer</span>${escapeHtml(item.teacher)}</div>
-            <div class="meta-item"><span class="meta-label">${whenLabel}</span>${escapeHtml(whenValue || "—")}</div>
-            <div class="meta-item"><span class="meta-label">Time</span>${escapeHtml(item.time || "—")}</div>
-            <div class="meta-item"><span class="meta-label">Room</span>${escapeHtml(item.room || "—")}</div>
-            ${item.group ? `<div class="meta-item"><span class="meta-label">Group</span>${escapeHtml(item.group)}</div>` : ""}
-            ${item.faculty ? `<div class="meta-item"><span class="meta-label">Faculty</span>${escapeHtml(item.faculty)}</div>` : ""}
+            <div class="meta-item"><span class="meta-label">${t("labelLecturer")}</span>${escapeHtml(item.teacher)}</div>
+            <div class="meta-item"><span class="meta-label">${whenLabel}</span>${escapeHtml(whenValue)}</div>
+            <div class="meta-item"><span class="meta-label">${t("labelTime")}</span>${escapeHtml(item.time || t("dash"))}</div>
+            <div class="meta-item"><span class="meta-label">${t("labelRoom")}</span>${escapeHtml(item.room || t("dash"))}</div>
+            ${item.group ? `<div class="meta-item"><span class="meta-label">${t("labelGroup")}</span>${escapeHtml(item.group)}</div>` : ""}
+            ${item.faculty ? `<div class="meta-item"><span class="meta-label">${t("labelFaculty")}</span>${escapeHtml(item.faculty)}</div>` : ""}
           </div>
         </article>`;
     })
@@ -65,12 +84,33 @@ function escapeHtml(text) {
     .replaceAll('"', "&quot;");
 }
 
+function formatSearchStatus(data) {
+  const key = data.count === 1 ? "statusFound" : "statusFoundPlural";
+  return t(key, { count: data.count, query: data.query });
+}
+
+function formatReadyStatus(data) {
+  let message = t("statusReady", {
+    teachers: data.teachers,
+    weekly: data.weekly_entries,
+    exam: data.exam_entries,
+  });
+  if (data.last_updated) {
+    message += t("statusReadyUpdated", { date: data.last_updated });
+  }
+  if (data.errors?.length) {
+    const wKey = data.errors.length === 1 ? "statusWarnings" : "statusWarningsPlural";
+    message += t(wKey, { count: data.errors.length });
+  }
+  return message;
+}
+
 async function runSearch() {
   const q = queryInput.value.trim();
   if (!q) return;
 
   if (!dataReady) {
-    showStatus("Still loading GTU data — please wait a moment and try again.");
+    showStatus(t("statusStillLoading"));
     pollStatus();
     return;
   }
@@ -78,7 +118,7 @@ async function runSearch() {
   const weekly = document.getElementById("weekly").checked;
   const exams = document.getElementById("exams").checked;
 
-  showStatus("Searching and translating…");
+  showStatus(t("statusSearching"));
   suggestionsEl.classList.add("hidden");
 
   try {
@@ -86,12 +126,13 @@ async function runSearch() {
     const response = await fetch(`/api/search?${params}`);
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.detail || "Search failed");
+      throw new Error(data.detail || t("statusSearchFailed"));
     }
-    showStatus(`Found ${data.count} result${data.count === 1 ? "" : "s"} for "${data.query}"`);
+    lastSearchData = data;
+    showStatus(formatSearchStatus(data));
     renderResults(data);
   } catch (error) {
-    showStatus(error.message || "Something went wrong.", true);
+    showStatus(error.message || t("statusSomethingWrong"), true);
   }
 }
 
@@ -118,53 +159,49 @@ async function loadSuggestions(value) {
   suggestionsEl.classList.remove("hidden");
 }
 
+function applyStatusFromData(data) {
+  lastStatusData = data;
+
+  if (data.loading && !data.ready) {
+    dataReady = false;
+    setSearchEnabled(false);
+    showStatus(data.message || t("statusLoading"));
+    return "poll";
+  }
+
+  if (data.ready) {
+    dataReady = true;
+    setSearchEnabled(true);
+
+    if (data.updating) {
+      statusEl.classList.add("updating");
+      showStatus(data.message || t("statusUpdating"));
+      return "poll";
+    }
+
+    showStatus(formatReadyStatus(data));
+    return "done";
+  }
+
+  dataReady = false;
+  setSearchEnabled(false);
+  showStatus(data.message || t("statusWaiting"), true);
+  return "poll";
+}
+
 async function pollStatus() {
   try {
     const response = await fetch("/api/status");
     if (!response.ok) throw new Error("Status request failed");
     const data = await response.json();
-
-    if (data.loading && !data.ready) {
-      dataReady = false;
-      setSearchEnabled(false);
-      showStatus(data.message || "Loading GTU timetable data…");
+    const next = applyStatusFromData(data);
+    if (next === "poll") {
       statusPollTimer = setTimeout(pollStatus, 3000);
-      return;
     }
-
-    if (data.ready) {
-      dataReady = true;
-      setSearchEnabled(true);
-
-      if (data.updating) {
-        statusEl.classList.add("updating");
-        const msg = data.message ||
-          "Schedule files are being updated — this can take up to 5 minutes. " +
-          "Search is still available using last week's data.";
-        showStatus(msg);
-        statusPollTimer = setTimeout(pollStatus, 3000);
-        return;
-      }
-
-      let message = `Ready — ${data.teachers} lecturers, ${data.weekly_entries} weekly classes, ${data.exam_entries} exam slots.`;
-      if (data.last_updated) {
-        message += ` Data from ${data.last_updated}. Updates automatically every Saturday.`;
-      }
-      if (data.errors?.length) {
-        message += ` (${data.errors.length} source warning${data.errors.length === 1 ? "" : "s"})`;
-      }
-      showStatus(message);
-      return;
-    }
-
-    dataReady = false;
-    setSearchEnabled(false);
-    showStatus(data.message || "Waiting for schedule data…", true);
-    statusPollTimer = setTimeout(pollStatus, 3000);
   } catch {
     dataReady = false;
     setSearchEnabled(false);
-    showStatus("Could not reach the server. On Render free tier, wait ~30s for the site to wake up, then reload the page.", true);
+    showStatus(t("statusServerError"), true);
   }
 }
 
@@ -184,6 +221,19 @@ suggestionsEl.addEventListener("click", (event) => {
   queryInput.value = button.dataset.name;
   suggestionsEl.classList.add("hidden");
   runSearch();
+});
+
+document.querySelectorAll("[data-lang]").forEach((btn) => {
+  btn.addEventListener("click", () => setLang(btn.dataset.lang));
+});
+
+window.addEventListener("languagechange", () => {
+  if (lastSearchData) {
+    renderResults(lastSearchData);
+    showStatus(formatSearchStatus(lastSearchData));
+  } else if (lastStatusData) {
+    applyStatusFromData(lastStatusData);
+  }
 });
 
 setSearchEnabled(false);

@@ -8,10 +8,16 @@
 </head>
 <body>
   <div class="page">
+    <nav class="lang-bar" aria-label="Language">
+      <button type="button" class="lang-btn" data-lang="en" aria-pressed="true" data-i18n-title="langEn">EN</button>
+      <button type="button" class="lang-btn" data-lang="ka" aria-pressed="false" data-i18n-title="langKa">KA</button>
+      <button type="button" class="lang-btn" data-lang="ru" aria-pressed="false" data-i18n-title="langRu">RU</button>
+    </nav>
+
     <header class="hero">
-      <div class="hero-badge">Georgian Technical University</div>
-      <h1>Find your lectures in English</h1>
-      <p class="subtitle">
+      <div class="hero-badge" data-i18n="heroBadge">Georgian Technical University</div>
+      <h1 data-i18n="heroTitle">Find your lectures</h1>
+      <p class="subtitle" data-i18n="heroSubtitle">
         Search by your lecturer's name. Data is fetched live from
         <a href="http://leqtori.gtu.ge/" target="_blank" rel="noopener">leqtori.gtu.ge</a>
         — weekly timetables and final exam schedules.
@@ -20,23 +26,24 @@
 
     <section class="search-panel">
       <form id="search-form" class="search-form">
-        <label for="query">Lecturer name</label>
+        <label for="query" data-i18n="searchLabel">Lecturer name</label>
         <div class="search-row">
           <input
             id="query"
             type="search"
+            data-i18n-placeholder="searchPlaceholder"
             placeholder="e.g. Gratiashvili, გრატიაშვილი, or Milashvili"
             autocomplete="off"
             required
           >
-          <button type="submit" id="search-btn">Search</button>
+          <button type="submit" id="search-btn" data-i18n="searchBtn">Search</button>
         </div>
         <div id="suggestions" class="suggestions hidden"></div>
       </form>
 
       <div class="filters">
-        <label><input type="checkbox" id="weekly" checked> Weekly timetable</label>
-        <label><input type="checkbox" id="exams" checked> Final exams</label>
+        <label><input type="checkbox" id="weekly" checked> <span data-i18n="filterWeekly">Weekly timetable</span></label>
+        <label><input type="checkbox" id="exams" checked> <span data-i18n="filterExams">Final exams</span></label>
       </div>
     </section>
 
@@ -44,11 +51,12 @@
     <section id="results" class="results"></section>
 
     <footer class="footer">
-      <p>Tip: Georgian names often appear as <em>Surname Firstname</em>. You can search in Georgian, English, or Russian transliteration.</p>
-      <p>Timetables auto-update every Saturday from leqtori.gtu.ge — no manual refresh needed.</p>
+      <p data-i18n="footerTip1">Tip: Georgian names often appear as <em>Surname Firstname</em>. You can search in Georgian, English, or Russian.</p>
+      <p data-i18n="footerTip2">Timetables auto-update every Saturday from leqtori.gtu.ge — no manual refresh needed.</p>
     </footer>
   </div>
 
+  <script src="/static/i18n.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
