@@ -236,6 +236,31 @@ def _build_index(*, force: bool = False) -> ScheduleIndex:
                 index.errors.append(f"Local PDF failed ({pdf_path.name}): {exc}")
 
     # ------------------------------------------------------------------
+    # Drop exact-duplicate exam rows. The same exam is often listed for
+    # several groups; line-based PDFs don't capture the group, so those rows
+    # collapse to identical copies. Remove the repeats so search shows each
+    # exam once.
+    # ------------------------------------------------------------------
+    seen_rows: set[tuple] = set()
+    unique_entries: list[ScheduleEntry] = []
+    for entry in index.entries:
+        key = (
+            entry.teacher_original,
+            entry.course_original,
+            entry.date,
+            entry.time,
+            entry.room,
+            entry.group,
+            entry.day,
+            entry.schedule_type,
+        )
+        if key in seen_rows:
+            continue
+        seen_rows.add(key)
+        unique_entries.append(entry)
+    index.entries = unique_entries
+
+    # ------------------------------------------------------------------
     # Deduplicate teacher names across all sources.
     #
     # Names from the weekly HTML are in Georgian script; names from exam

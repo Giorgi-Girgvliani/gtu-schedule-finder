@@ -108,119 +108,185 @@ def _score_entries(entries: list[ScheduleEntry]) -> tuple[float, dict]:
     return max(score, 0.0), stats
 
 
+HEADER_HINT_RE = re.compile(r"ჯგუფ|კურს|გვარ|პროფ|თარიღ|აუდიტ|დრო|date|teacher|group", re.I)
+ROOM_RE = re.compile(r"\b\d{1,3}\s*[-–]\s*\d{1,3}|корпус|этаж|building|აუდიტ|კორპუს")
+TIME_ONLY_RE = re.compile(r"^\D*\d{1,2}:\d{2}\D*$")
+
+
 def _row_is_header(cells: list[str]) -> bool:
-    joined = " ".join(cells).lower()
-    hits = sum(1 for m in HEADER_MARKERS if m in joined)
-    return hits >= 2
+    joined = " ".join(cells)
+    return len(HEADER_HINT_RE.findall(joined)) >= 2
 
 
-def _map_columns(header: list[str]) -> dict[str, int]:
-    mapping: dict[str, int] = {}
-    for i, cell in enumerate(header):
-        c = cell.lower()
-        if "ჯგუფ" in c or c in {"№", "no", "#"}:
-            mapping["group"] = i
-        elif "კურს" in c:
-            mapping["course"] = i
-        elif "გვარი" in c or "პროფ" in c:
-            mapping["teacher"] = i
-        elif "თარიღ" in c:
-            mapping["date"] = i
-        elif "დრო" in c:
-            mapping["time"] = i
-        elif "აუდიტ" in c:
-            mapping["room"] = i
-    # Default GTU layout when headers are messy
-    if "course" not in mapping and len(header) >= 6:
-        mapping.setdefault("group", 0)
-        mapping.setdefault("course", 1)
-        mapping.setdefault("teacher", 2)
-        mapping.setdefault("date", 3)
-        mapping.setdefault("time", 4)
-        mapping.setdefault("room", 5)
-    return mapping
+def _is_groupish(cell: str) -> bool:
+    return bool(GROUP_RE.match(cell.strip()))
 
 
-def _entry_from_row(
+def _looks_like_date(cell: str) -> bool:
+    if DATE_NUMERIC.search(cell):
+        return True
+    return any(m in cell for m in GEORGIAN_MONTHS) and bool(re.search(r"\d", cell))
+
+
+def _infer_columns(rows: list[list[str]]) -> dict[str, int]:
+    """Infer column roles from cell *content*, independent of column order.
+
+    GTU exam PDFs vary the column order and language between faculties (and
+    sometimes within one PDF). Instead of trusting header text or a fixed
+    layout, we score every column by how often its cells look like a date,
+    a time, a group number, a room, or a person name, then assign each role
+    to its best-fitting column.
+    """
+    if not rows:
+        return {}
+    ncols = max(len(r) for r in rows)
+    score = {k: [0] * ncols for k in ("date", "time", "group", "room", "person", "text")}
+
+    for row in rows:
+        for i in range(ncols):
+            cell = row[i].strip() if i < len(row) else ""
+            if not cell:
+                continue
+            if _looks_like_date(cell):
+                score["date"][i] += 1
+            elif TIME_ONLY_RE.match(cell):
+                score["time"][i] += 1
+            if _is_groupish(cell):
+                score["group"][i] += 1
+            if ROOM_RE.search(cell):
+                score["room"][i] += 1
+            if is_likely_person_name(cell):
+                score["person"][i] += 1
+            if re.search(r"[^\W\d_]{3,}", cell, re.UNICODE):
+                score["text"][i] += 1
+
+    used: set[int] = set()
+
+    def take(key: str, *, avoid_text: bool = False) -> int | None:
+        best, best_val = None, 0
+        for i in range(ncols):
+            if i in used:
+                continue
+            val = score[key][i]
+            if val > best_val:
+                best, best_val = i, val
+        if best is not None and best_val > 0:
+            used.add(best)
+        return best
+
+    cols: dict[str, int] = {}
+    for key in ("date", "time", "group", "room", "person"):
+        idx = take(key)
+        if idx is not None:
+            cols[key] = idx
+    if "person" in cols:
+        cols["teacher"] = cols.pop("person")
+
+    # Course = the remaining free-text column with the most text (excluding
+    # the columns already claimed by structured roles / the teacher).
+    best, best_val = None, 0
+    for i in range(ncols):
+        if i in used:
+            continue
+        if score["text"][i] > best_val:
+            best, best_val = i, score["text"][i]
+    if best is not None:
+        cols["course"] = best
+    return cols
+
+
+def _carry_entry(
     row: list[str],
     cols: dict[str, int],
     *,
     faculty: str,
     source_url: str,
-    current_group: str,
-) -> tuple[ScheduleEntry | None, str]:
+    state: dict,
+) -> ScheduleEntry | None:
     def cell(key: str) -> str:
         idx = cols.get(key, -1)
         if idx < 0 or idx >= len(row):
             return ""
         return _clean_cell(row[idx])
 
-    group = cell("group") or current_group
+    group = cell("group")
     if group and GROUP_RE.match(group):
-        current_group = group
-    elif not group:
-        group = current_group
+        state["group"] = group
+    group = state.get("group", "")
 
     course = cell("course")
     teacher_raw = normalize_person_name(cell("teacher"))
-    date_raw = cell("date")
-    time_raw = cell("time")
+    date = _parse_georgian_date(cell("date"))
+    time = _extract_time(cell("time")) or _extract_time(cell("date"))
     room = cell("room")
 
-    if not course and not teacher_raw:
-        return None, current_group
+    # A row with only a professor (and no course/date) is a co-examiner of the
+    # previous exam — reuse the previous course/date/time/room for it.
+    if teacher_raw and not course and not date:
+        course = state.get("course", "")
+        date = date or state.get("date", "")
+        time = time or state.get("time", "")
+        room = room or state.get("room", "")
+    else:
+        if course:
+            state["course"] = course
+        if date:
+            state["date"] = date
+        if time:
+            state["time"] = time
+        if room:
+            state["room"] = room
 
     if not course:
-        return None, current_group
-
-    date = _parse_georgian_date(date_raw)
-    time = _extract_time(time_raw) or _extract_time(date_raw)
+        return None
 
     teacher = teacher_raw if is_likely_person_name(teacher_raw) else ""
 
-    return (
-        ScheduleEntry(
-            teacher=teacher or "",
-            teacher_original=teacher or "",
-            course=course,
-            course_original=course,
-            day="",
-            time=time,
-            room=room,
-            group=group,
-            source=source_url,
-            schedule_type="exam",
-            faculty=faculty,
-            date=date,
-        ),
-        current_group,
+    return ScheduleEntry(
+        teacher=teacher,
+        teacher_original=teacher,
+        course=course,
+        course_original=course,
+        day="",
+        time=time,
+        room=room,
+        group=group,
+        source=source_url,
+        schedule_type="exam",
+        faculty=faculty,
+        date=date,
     )
 
 
 def parse_tables(pdf_bytes: bytes, faculty: str, source_url: str) -> list[ScheduleEntry]:
-    entries: list[ScheduleEntry] = []
+    # 1) Collect every data row across all pages (headers/blank rows dropped).
+    raw_rows: list[list[str]] = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
             for table in page.extract_tables() or []:
-                if not table or len(table) < 2:
-                    continue
-                cols: dict[str, int] | None = None
-                current_group = ""
-                for row in table:
+                for row in table or []:
                     cells = [_clean_cell(c) for c in row]
                     if not any(cells):
                         continue
-                    if cols is None or _row_is_header(cells):
-                        if _row_is_header(cells):
-                            cols = _map_columns(cells)
+                    if _row_is_header(cells):
                         continue
-                    if cols is None:
-                        continue
-                    entry, current_group = _entry_from_row(
-                        cells, cols, faculty=faculty, source_url=source_url, current_group=current_group
-                    )
-                    if entry:
-                        entries.append(entry)
+                    raw_rows.append(cells)
+
+    if not raw_rows:
+        return []
+
+    # 2) Infer the column layout once from the whole document.
+    cols = _infer_columns(raw_rows)
+    if "course" not in cols and "teacher" not in cols:
+        return []
+
+    # 3) Build entries, carrying group / co-examiner context forward.
+    entries: list[ScheduleEntry] = []
+    state: dict = {}
+    for row in raw_rows:
+        entry = _carry_entry(row, cols, faculty=faculty, source_url=source_url, state=state)
+        if entry:
+            entries.append(entry)
     return entries
 
 
