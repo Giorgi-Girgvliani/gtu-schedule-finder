@@ -13,6 +13,7 @@ const I18N = {
     footerTip1:
       "Tip: Georgian names often appear as <em>Surname Firstname</em>. You can search in Georgian, English, or Russian.",
     footerTip2: "Timetables auto-update every Saturday from leqtori.gtu.ge — no manual refresh needed.",
+    footerCreatorLabel: "Built for students by",
     langEn: "English",
     langKa: "Georgian",
     langRu: "Russian",
@@ -62,6 +63,7 @@ const I18N = {
     footerTip1:
       "რჩევა: ხშირად სახელი ფორმატითაა <em>გვარი სახელი</em>. შეგიძლია ქართულად, ინგლისურად ან რუსულად მოძებნო.",
     footerTip2: "განრიგი ავტომატურად განახლდება ყოველ შაბათს leqtori.gtu.ge-დან — ხელით განახლება არ სჭირდება.",
+    footerCreatorLabel: "შექმნილია სტუდენტებისთვის",
     langEn: "English",
     langKa: "ქართული",
     langRu: "Русский",
@@ -111,6 +113,7 @@ const I18N = {
     footerTip1:
       "Подсказка: грузинские имена часто в формате <em>Фамилия Имя</em>. Можно искать на грузинском, английском или русском.",
     footerTip2: "Расписание обновляется каждую субботу с leqtori.gtu.ge — ручное обновление не требуется.",
+    footerCreatorLabel: "Сделано для студентов",
     langEn: "English",
     langKa: "ქართული",
     langRu: "Русский",

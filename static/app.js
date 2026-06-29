@@ -55,7 +55,7 @@ function renderResults(data) {
       const badge = isExam ? t("badgeExam") : t("badgeWeekly");
       const { title, subtitle } = courseDisplay(item);
       return `
-        <article class="card">
+        <article class="card ${isExam ? "card-exam" : "card-weekly"}">
           <div class="card-header">
             <div>
               <p class="course-title">${escapeHtml(title)}</p>
