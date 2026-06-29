@@ -8,7 +8,8 @@ from .config import FALLBACK_EXAM_PDF_URLS, FALLBACK_TEACHERS_URLS, LOCAL_PDF_DI
 from .discover import discover_sources
 from .fetcher import fetch_url
 from .html_parser import ScheduleEntry, list_teachers, parse_teachers_html
-from .pdf_parser import parse_exam_pdf
+from .name_validation import is_likely_person_name
+from .pdf_parser import parse_exam_pdf, parse_exam_pdf_with_meta
 from .schedule_refresh import REFRESH_DELAY_SECONDS, format_loaded_at, should_refresh_weekly
 from .storage import load_index, save_index
 from .translator import (
@@ -27,6 +28,7 @@ class ScheduleIndex:
     loaded_at: float = 0.0
     sources: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    parser_log: list[str] = field(default_factory=list)
 
 
 _index: ScheduleIndex | None = None
@@ -214,8 +216,12 @@ def _build_index(*, force: bool = False) -> ScheduleIndex:
     for faculty, url in exam_pdfs:
         try:
             pdf = fetch_url(url, force=force)
-            index.entries.extend(parse_exam_pdf(pdf, faculty, url))
+            result = parse_exam_pdf_with_meta(pdf, faculty, url)
+            index.entries.extend(result.entries)
             index.sources.append(url)
+            index.parser_log.append(
+                f"{faculty}: {result.strategy} ({result.stats.get('count', 0)} rows, score={result.score:.1f})"
+            )
         except Exception as exc:
             index.errors.append(f"Exam PDF failed ({faculty}): {exc}")
 
@@ -245,6 +251,8 @@ def _build_index(*, force: bool = False) -> ScheduleIndex:
     name_map: dict[str, str] = {}  # transliteration_key → display name
 
     for name in index.teachers:
+        if not is_likely_person_name(name):
+            continue
         key = transliteration_key(name)
         if not key:
             continue
@@ -259,6 +267,8 @@ def _build_index(*, force: bool = False) -> ScheduleIndex:
         if entry.schedule_type != "exam":
             continue
         name = entry.teacher_original
+        if not name or not is_likely_person_name(name):
+            continue
         key = transliteration_key(name)
         if not key:
             continue

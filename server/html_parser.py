@@ -7,6 +7,8 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 from .config import DAY_MAP
+from .name_validation import is_likely_person_name
+from .translator import translate_course_line
 
 
 @dataclass
@@ -164,25 +166,8 @@ def _clean_teacher_name(raw: str) -> str:
 
 
 def _is_valid_teacher_name(name: str) -> bool:
-    """Return True if *name* looks like an actual teacher name.
-
-    Filters out course titles, section headers, and other noise entries
-    that appear in the navigation list of some GTU timetable pages.
-    """
-    if not name:
-        return False
-    # Entries wrapped in parentheses are course/section notes, not names
-    if name.startswith("(") or name.startswith("["):
-        return False
-    # Too short to be a real name
-    if len(name) < 3:
-        return False
-    # Require at least 2 tokens OR an abbreviated initial (e.g. "თ.აბუაშვილი")
-    has_initial = "." in name and not name.startswith(".")
-    has_two_tokens = len(name.split()) >= 2
-    if not has_initial and not has_two_tokens:
-        return False
-    return True
+    """Return True if *name* looks like an actual teacher name."""
+    return is_likely_person_name(name)
 
 
 def list_teachers(html: bytes) -> list[str]:

@@ -37,6 +37,10 @@ def main() -> None:
         print(f"  Warnings : {len(index.errors)}")
         for err in index.errors:
             print(f"    • {err}")
+    if index.parser_log:
+        print("  PDF parsers:")
+        for line in index.parser_log:
+            print(f"    • {line}")
 
     save_index(
         index.entries,
