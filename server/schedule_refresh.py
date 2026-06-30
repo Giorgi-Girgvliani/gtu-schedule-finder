@@ -8,7 +8,7 @@ TBILISI = timezone(timedelta(hours=4))
 # GTU publishes next week's timetable on Saturdays (per leqtori.gtu.ge notice)
 REFRESH_WEEKDAY = 5  # Saturday
 # Assume new files appear during Saturday daytime — refresh after this hour (Tbilisi)
-REFRESH_HOUR = 14  # 2:00 PM
+REFRESH_HOUR = 17  # 2:00 PM
 
 # How long (seconds) to wait after startup before triggering a background
 # Saturday refresh.  Gives the Render free-tier instance time to finish
