@@ -1,13 +1,13 @@
 name: Saturday Schedule Update
 
-# Run every Saturday at 10:00 UTC (14:00 Tbilisi / UTC+4).
+# Run every Saturday at 12:00 UTC (16:00 Tbilisi / UTC+4).
 # GTU publishes the next week's timetable on Saturday afternoons, so this
 # timing ensures we pick up the fresh files shortly after they appear.
 #
 # You can also trigger this manually from the Actions tab.
 on:
   schedule:
-    - cron: "0 10 * * 6"
+    - cron: "0 12 * * 6"
   workflow_dispatch:
 
 jobs:
